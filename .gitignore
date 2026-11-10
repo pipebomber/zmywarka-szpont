@@ -1,0 +1,8 @@
+.pio/
+.vscode/
+sdkconfig.jc3248w535
+get-platformio.py
+include/secrets.h
+*.pdf
+__pycache__/
+*.pyc

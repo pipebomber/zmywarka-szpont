@@ -1,0 +1,88 @@
+name: Build Firmware (.bin)
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.platformio
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini', 'sdkconfig.defaults') }}
+          restore-keys: |
+            ${{ runner.os }}-pio-
+
+      - name: Install PlatformIO
+        run: pip install -U platformio
+
+      - name: Prepare build config
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+          DISHWASHER_IP: ${{ secrets.DISHWASHER_IP }}
+        run: |
+          if [ ! -f include/secrets.h ]; then
+            printf '#ifndef SECRETS_H\n#define SECRETS_H\n' > include/secrets.h
+            if [ -n "$WIFI_SSID" ]; then
+              printf '#define WIFI_SSID "%s"\n#define WIFI_PASSWORD "%s"\n' "$WIFI_SSID" "$WIFI_PASSWORD" >> include/secrets.h
+            fi
+            if [ -n "$DISHWASHER_IP" ]; then
+              printf '#define DISHWASHER_IP "%s"\n' "$DISHWASHER_IP" >> include/secrets.h
+            fi
+            printf '#endif\n' >> include/secrets.h
+          fi
+
+      - name: Build ESP32-S3 firmware
+        run: pio run
+
+      - name: Collect .bin binaries
+        run: |
+          mkdir -p dist
+          cp .pio/build/jc3248w535/firmware.bin dist/zmywarka-esp-firmware.bin
+          cp .pio/build/jc3248w535/bootloader.bin dist/bootloader.bin
+          cp .pio/build/jc3248w535/partitions.bin dist/partitions.bin
+          ls -lh dist/
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zmywarka-esp-firmware
+          path: dist/*.bin
+          retention-days: 30
+
+      - name: Publish Release (.bin) on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.bin
+
+      - name: Publish Rolling Release (.bin) on main
+        if: github.event_name != 'pull_request' && !startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Zmywarka ESP — Latest Firmware
+          make_latest: true
+          files: dist/*.bin
