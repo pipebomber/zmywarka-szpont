@@ -172,11 +172,29 @@ typedef struct {
     lv_obj_t *lbl_w_empty;
     lv_obj_t *btn_w_close;
     lv_obj_t *lbl_w_close;
+    int8_t w_sel_day;
+    lv_obj_t *w_week_box;
+    lv_obj_t *lbl_w_summary;
     lv_obj_t *w_col[WEATHER_MAX_DAYS];
     lv_obj_t *lbl_w_day[WEATHER_MAX_DAYS];
     lv_obj_t *ic_w_day[WEATHER_MAX_DAYS];
     lv_obj_t *lbl_w_hi[WEATHER_MAX_DAYS];
     lv_obj_t *lbl_w_lo[WEATHER_MAX_DAYS];
+    lv_obj_t *lbl_w_pop[WEATHER_MAX_DAYS];
+    lv_obj_t *w_day_box;
+    lv_obj_t *btn_w_back;
+    lv_obj_t *lbl_w_back;
+    lv_obj_t *w_det_card;
+    lv_obj_t *ic_w_det;
+    lv_obj_t *lbl_w_det_temp;
+    lv_obj_t *lbl_w_det_sun;
+    lv_obj_t *lbl_w_det_meta;
+    lv_obj_t *w_hour_row;
+    lv_obj_t *w_hour_card[WEATHER_MAX_HOURS];
+    lv_obj_t *lbl_wh_time[WEATHER_MAX_HOURS];
+    lv_obj_t *ic_wh[WEATHER_MAX_HOURS];
+    lv_obj_t *lbl_wh_temp[WEATHER_MAX_HOURS];
+    lv_obj_t *lbl_wh_pop[WEATHER_MAX_HOURS];
 } ui_ctx_t;
 
 extern ui_ctx_t ui;
@@ -201,6 +219,7 @@ void ui_idle_refresh_supply_banner(void);
 void ui_idle_refresh_weather(void);
 void ui_pick_weather_icon(const ui_palette_t *p, uint8_t code, bool day,
                           const lv_img_dsc_t **out_ic, lv_color_t *out_col);
+const char *ui_wmo_desc(uint8_t code, bool day);
 void ui_idle_apply_theme(const ui_palette_t *p);
 
 // ui_work.c

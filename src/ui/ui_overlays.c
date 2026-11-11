@@ -1,3 +1,4 @@
+#include <time.h>
 #include "esp_timer.h"
 #include "ui_internal.h"
 
@@ -133,16 +134,140 @@ static void on_weather_close(lv_event_t *e)
     if (ui.overlay_weather) lv_obj_add_flag(ui.overlay_weather, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void on_weather_back(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    ui.w_sel_day = -1;
+    ui_refresh_weather_forecast();
+}
+
+static void on_weather_day_tap(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    int idx = (int)(intptr_t)lv_event_get_user_data(e);
+    if (idx >= 0 && idx < ui.weather.day_count) {
+        ui.w_sel_day = (int8_t)idx;
+        ui_refresh_weather_forecast();
+    }
+}
+
+static int current_local_hour(void)
+{
+    time_t now = 0;
+    struct tm t = {0};
+    time(&now);
+    localtime_r(&now, &t);
+    if (t.tm_year < (2024 - 1900)) return -1;
+    return t.tm_hour;
+}
+
+static void refresh_weather_day_detail(const ui_palette_t *p, const weather_day_t *d,
+                                       int day_idx, const char *day_name)
+{
+    if (ui.btn_w_back) lv_obj_clear_flag(ui.btn_w_back, LV_OBJ_FLAG_HIDDEN);
+    if (ui.lbl_w_city) {
+        lv_obj_set_width(ui.lbl_w_city, 244);
+        lv_obj_align(ui.lbl_w_city, LV_ALIGN_TOP_LEFT, 92, 4);
+        lv_label_set_text_fmt(ui.lbl_w_city, "%s · %s", day_name, ui_wmo_desc(d->wmo_code, true));
+    }
+
+    if (ui.w_det_card) {
+        lv_obj_set_style_bg_color(ui.w_det_card, lv_color_hex(p->sleep_bg), 0);
+        lv_obj_set_style_border_color(ui.w_det_card, lv_color_hex(p->border_light), 0);
+    }
+
+    const lv_img_dsc_t *ic = &ic_w_sun;
+    lv_color_t col = lv_color_hex(0xF59E0B);
+    ui_pick_weather_icon(p, d->wmo_code, true, &ic, &col);
+    if (ui.ic_w_det) {
+        lv_img_set_src(ui.ic_w_det, ic);
+        lv_obj_set_style_img_recolor(ui.ic_w_det, col, 0);
+    }
+
+    if (ui.lbl_w_det_temp) {
+        lv_obj_set_style_text_color(ui.lbl_w_det_temp, lv_color_hex(p->text), 0);
+        if (day_idx == 0) {
+            lv_label_set_text_fmt(ui.lbl_w_det_temp, "%d° / %d°  (odcz. %d°)",
+                                  (int)d->t_max, (int)d->t_min, (int)ui.weather.feels_c);
+        } else {
+            lv_label_set_text_fmt(ui.lbl_w_det_temp, "%d° / %d°", (int)d->t_max, (int)d->t_min);
+        }
+    }
+
+    if (ui.lbl_w_det_sun) {
+        lv_obj_set_style_text_color(ui.lbl_w_det_sun, lv_color_hex(p->text_sub), 0);
+        lv_label_set_text_fmt(ui.lbl_w_det_sun, "%02u:%02u - %02u:%02u",
+                              d->sr_h, d->sr_m, d->ss_h, d->ss_m);
+    }
+
+    if (ui.lbl_w_det_meta) {
+        lv_obj_set_style_text_color(ui.lbl_w_det_meta, lv_color_hex(p->text_sub), 0);
+        if (day_idx == 0 && ui.weather.pressure_hpa > 0) {
+            lv_label_set_text_fmt(ui.lbl_w_det_meta, "Opad: %u%% (%u.%u mm) · Wiatr: %u km/h · %u%% · %u hPa",
+                                  d->pop_max, (unsigned)(d->rain_mm10 / 10), (unsigned)(d->rain_mm10 % 10),
+                                  ui.weather.wind_kmh, ui.weather.humidity, (unsigned)ui.weather.pressure_hpa);
+        } else {
+            lv_label_set_text_fmt(ui.lbl_w_det_meta, "Opad: %u%% (%u.%u mm) · Max wiatr: %u km/h",
+                                  d->pop_max, (unsigned)(d->rain_mm10 / 10), (unsigned)(d->rain_mm10 % 10),
+                                  d->wind_max);
+        }
+    }
+
+    int cur_h = (day_idx == 0) ? current_local_hour() : -1;
+    int sr_min = d->sr_h * 60 + d->sr_m;
+    int ss_min = d->ss_h * 60 + d->ss_m;
+    lv_color_t c_rain = p->is_light ? lv_color_hex(0x0284C7) : lv_color_hex(0x38BDF8);
+
+    for (int h = 0; h < WEATHER_MAX_HOURS; h++) {
+        if (!ui.w_hour_card[h]) continue;
+        if (h >= d->hour_count) {
+            lv_obj_add_flag(ui.w_hour_card[h], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(ui.w_hour_card[h], LV_OBJ_FLAG_HIDDEN);
+
+        bool is_now = (day_idx == 0 && cur_h >= 0 && h == cur_h);
+        lv_obj_set_style_bg_color(ui.w_hour_card[h], lv_color_hex(is_now ? p->sel_bg : p->sleep_bg), 0);
+        lv_obj_set_style_border_color(ui.w_hour_card[h], lv_color_hex(is_now ? p->accent : p->border_light), 0);
+
+        const weather_hour_t *hr = &d->hours[h];
+        lv_label_set_text_fmt(ui.lbl_wh_time[h], "%02d:00", h);
+        lv_obj_set_style_text_color(ui.lbl_wh_time[h], lv_color_hex(is_now ? p->accent : p->text_sub), 0);
+
+        int h_min = h * 60 + 30;
+        bool h_day = (h_min >= sr_min && h_min < ss_min);
+        const lv_img_dsc_t *hic = &ic_w_sun;
+        lv_color_t hcol = lv_color_hex(0xF59E0B);
+        ui_pick_weather_icon(p, hr->wmo_code, h_day, &hic, &hcol);
+        lv_img_set_src(ui.ic_wh[h], hic);
+        lv_obj_set_style_img_recolor(ui.ic_wh[h], hcol, 0);
+
+        lv_label_set_text_fmt(ui.lbl_wh_temp[h], "%d°", (int)hr->temp_c);
+        lv_obj_set_style_text_color(ui.lbl_wh_temp[h], lv_color_hex(p->text), 0);
+
+        lv_label_set_text_fmt(ui.lbl_wh_pop[h], "%u%%", hr->pop_pct);
+        lv_obj_set_style_text_color(ui.lbl_wh_pop[h], hr->pop_pct >= 20 ? c_rain : lv_color_hex(p->muted), 0);
+    }
+
+    if (ui.w_hour_row) {
+        int focus_h = (day_idx == 0 && cur_h >= 0) ? cur_h : 6;
+        if (focus_h > WEATHER_MAX_HOURS - 6) focus_h = WEATHER_MAX_HOURS - 6;
+        if (focus_h < 0) focus_h = 0;
+        lv_obj_update_layout(ui.w_hour_row);
+        lv_obj_scroll_to_x(ui.w_hour_row, focus_h * 65, LV_ANIM_OFF);
+    }
+}
+
 void ui_refresh_weather_forecast(void)
 {
     if (!ui.w_dlg) return;
 
     const ui_palette_t *p = ui_theme_get();
     static const char *WDAYS[7] = {"Nd", "Pon", "Wt", "Śr", "Czw", "Pt", "Sob"};
+    lv_color_t c_rain = p->is_light ? lv_color_hex(0x0284C7) : lv_color_hex(0x38BDF8);
 
-    if (ui.lbl_w_city) {
-        const char *city = ui.weather.city[0] ? ui.weather.city : "Wrocław";
-        lv_label_set_text_fmt(ui.lbl_w_city, "Pogoda · %s", city);
+    if (ui.w_sel_day >= ui.weather.day_count) {
+        ui.w_sel_day = -1;
     }
 
     if (ui.lbl_w_empty) {
@@ -154,10 +279,41 @@ void ui_refresh_weather_forecast(void)
         }
     }
 
+    if (ui.w_sel_day >= 0 && ui.w_sel_day < ui.weather.day_count) {
+        if (ui.w_week_box) lv_obj_add_flag(ui.w_week_box, LV_OBJ_FLAG_HIDDEN);
+        if (ui.w_day_box) lv_obj_clear_flag(ui.w_day_box, LV_OBJ_FLAG_HIDDEN);
+        const weather_day_t *d = &ui.weather.days[ui.w_sel_day];
+        const char *dname = (ui.w_sel_day == 0) ? "Dziś" : WDAYS[d->wday % 7];
+        refresh_weather_day_detail(p, d, ui.w_sel_day, dname);
+        return;
+    }
+
+    if (ui.btn_w_back) lv_obj_add_flag(ui.btn_w_back, LV_OBJ_FLAG_HIDDEN);
+    if (ui.w_day_box) lv_obj_add_flag(ui.w_day_box, LV_OBJ_FLAG_HIDDEN);
+    if (ui.w_week_box) lv_obj_clear_flag(ui.w_week_box, LV_OBJ_FLAG_HIDDEN);
+
+    if (ui.lbl_w_city) {
+        const char *city = ui.weather.city[0] ? ui.weather.city : "Wrocław";
+        lv_obj_set_width(ui.lbl_w_city, 332);
+        lv_obj_align(ui.lbl_w_city, LV_ALIGN_TOP_LEFT, 0, 4);
+        lv_label_set_text_fmt(ui.lbl_w_city, "Pogoda · %s", city);
+    }
+
+    if (ui.lbl_w_summary) {
+        lv_obj_set_style_text_color(ui.lbl_w_summary, lv_color_hex(p->text_sub), 0);
+        if (ui.weather.pressure_hpa > 0) {
+            lv_label_set_text_fmt(ui.lbl_w_summary, "%s · Odcz. %d° · Wilg. %u%% · Wiatr %u km/h · %u hPa",
+                                  ui_wmo_desc(ui.weather.wmo_code, ui.weather.is_day),
+                                  (int)ui.weather.feels_c, ui.weather.humidity,
+                                  ui.weather.wind_kmh, (unsigned)ui.weather.pressure_hpa);
+        } else {
+            lv_label_set_text(ui.lbl_w_summary, ui_wmo_desc(ui.weather.wmo_code, ui.weather.is_day));
+        }
+    }
+
     for (int i = 0; i < WEATHER_MAX_DAYS; i++) {
         if (!ui.w_col[i]) continue;
-        bool has_day = (i < ui.weather.day_count);
-        if (!has_day) {
+        if (i >= ui.weather.day_count) {
             lv_obj_add_flag(ui.w_col[i], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
@@ -182,12 +338,17 @@ void ui_refresh_weather_forecast(void)
         lv_obj_set_style_text_color(ui.lbl_w_hi[i], lv_color_hex(p->text), 0);
         lv_label_set_text_fmt(ui.lbl_w_lo[i], "%d°", (int)d->t_min);
         lv_obj_set_style_text_color(ui.lbl_w_lo[i], lv_color_hex(p->text_sub), 0);
+        if (ui.lbl_w_pop[i]) {
+            lv_label_set_text_fmt(ui.lbl_w_pop[i], "%u%%", d->pop_max);
+            lv_obj_set_style_text_color(ui.lbl_w_pop[i], d->pop_max >= 20 ? c_rain : lv_color_hex(p->muted), 0);
+        }
     }
 }
 
 void ui_open_weather_forecast(void)
 {
     if (!ui.overlay_weather || !ui.weather.valid) return;
+    ui.w_sel_day = -1;
     ui_refresh_weather_forecast();
     lv_obj_clear_flag(ui.overlay_weather, LV_OBJ_FLAG_HIDDEN);
 }
@@ -561,13 +722,13 @@ void ui_create_overlays(lv_obj_t *scr)
     lv_obj_set_style_text_color(ui.lbl_ota_close, TH_TEXT, 0);
     lv_obj_center(ui.lbl_ota_close);
 
-    // nakladka prognozy 7-dniowej
+    // nakladka prognozy 7-dniowej + szczegolow dnia i godzin
     ui.overlay_weather = ui_make_overlay_backdrop(scr);
     lv_obj_add_flag(ui.overlay_weather, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ui.overlay_weather, on_weather_close, LV_EVENT_CLICKED, NULL);
 
     ui.w_dlg = lv_obj_create(ui.overlay_weather);
-    lv_obj_set_size(ui.w_dlg, 456, 270);
+    lv_obj_set_size(ui.w_dlg, 456, 280);
     lv_obj_add_style(ui.w_dlg, &st_bento_tile, 0);
     lv_obj_set_style_pad_all(ui.w_dlg, 12, 0);
     lv_obj_set_style_border_color(ui.w_dlg, TH_CYAN, 0);
@@ -581,6 +742,25 @@ void ui_create_overlays(lv_obj_t *scr)
     lv_obj_set_style_text_color(ui.lbl_w_empty, TH_TEXT_SUB, 0);
     lv_obj_align(ui.lbl_w_empty, LV_ALIGN_CENTER, 0, 18);
     lv_obj_add_flag(ui.lbl_w_empty, LV_OBJ_FLAG_HIDDEN);
+
+    ui.btn_w_back = lv_btn_create(ui.w_dlg);
+    lv_obj_set_size(ui.btn_w_back, 82, 34);
+    lv_obj_add_style(ui.btn_w_back, &st_btn_pressed, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(ui.btn_w_back, lv_color_hex(p->sleep_bg), 0);
+    lv_obj_set_style_radius(ui.btn_w_back, 10, 0);
+    lv_obj_set_style_border_color(ui.btn_w_back, TH_BORDER_LIGHT, 0);
+    lv_obj_set_style_border_width(ui.btn_w_back, 1, 0);
+    lv_obj_set_style_pad_all(ui.btn_w_back, 0, 0);
+    lv_obj_set_style_shadow_width(ui.btn_w_back, 0, 0);
+    lv_obj_align(ui.btn_w_back, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_add_event_cb(ui.btn_w_back, on_weather_back, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(ui.btn_w_back, LV_OBJ_FLAG_HIDDEN);
+
+    ui.lbl_w_back = lv_label_create(ui.btn_w_back);
+    lv_label_set_text(ui.lbl_w_back, "< 7 dni");
+    lv_obj_set_style_text_font(ui.lbl_w_back, &pl_font_16, 0);
+    lv_obj_set_style_text_color(ui.lbl_w_back, TH_TEXT, 0);
+    lv_obj_center(ui.lbl_w_back);
 
     ui.lbl_w_city = lv_label_create(ui.w_dlg);
     lv_obj_set_width(ui.lbl_w_city, 332);
@@ -608,38 +788,150 @@ void ui_create_overlays(lv_obj_t *scr)
     lv_obj_set_style_text_color(ui.lbl_w_close, TH_TEXT, 0);
     lv_obj_center(ui.lbl_w_close);
 
+    // widok 7 dni
+    ui.w_week_box = lv_obj_create(ui.w_dlg);
+    lv_obj_set_size(ui.w_week_box, 432, 218);
+    lv_obj_set_pos(ui.w_week_box, 0, 38);
+    lv_obj_clear_flag(ui.w_week_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_opa(ui.w_week_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ui.w_week_box, 0, 0);
+    lv_obj_set_style_pad_all(ui.w_week_box, 0, 0);
+
+    ui.lbl_w_summary = lv_label_create(ui.w_week_box);
+    lv_obj_set_width(ui.lbl_w_summary, 432);
+    lv_label_set_long_mode(ui.lbl_w_summary, LV_LABEL_LONG_DOT);
+    lv_label_set_text(ui.lbl_w_summary, "");
+    lv_obj_set_style_text_font(ui.lbl_w_summary, &pl_font_16, 0);
+    lv_obj_set_style_text_color(ui.lbl_w_summary, TH_TEXT_SUB, 0);
+    lv_obj_set_pos(ui.lbl_w_summary, 0, 0);
+
     for (int i = 0; i < WEATHER_MAX_DAYS; i++) {
-        lv_obj_t *col = lv_obj_create(ui.w_dlg);
+        lv_obj_t *col = lv_obj_create(ui.w_week_box);
         ui.w_col[i] = col;
-        lv_obj_set_size(col, 58, 194);
-        lv_obj_set_pos(col, i * 62, 48);
-        lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(col, 58, 188);
+        lv_obj_set_pos(col, i * 62, 28);
+        lv_obj_add_style(col, &st_btn_pressed, LV_STATE_PRESSED);
+        lv_obj_clear_flag(col, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(col, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_pad_all(col, 0, 0);
         lv_obj_set_style_radius(col, 14, 0);
         lv_obj_set_style_border_width(col, 1, 0);
         lv_obj_set_style_bg_color(col, lv_color_hex(p->sleep_bg), 0);
         lv_obj_set_style_border_color(col, TH_BORDER_LIGHT, 0);
+        lv_obj_add_event_cb(col, on_weather_day_tap, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         ui.lbl_w_day[i] = lv_label_create(col);
         lv_label_set_text(ui.lbl_w_day[i], "-");
         lv_obj_set_style_text_font(ui.lbl_w_day[i], &pl_font_16, 0);
         lv_obj_set_style_text_color(ui.lbl_w_day[i], TH_TEXT_SUB, 0);
-        lv_obj_align(ui.lbl_w_day[i], LV_ALIGN_TOP_MID, 0, 14);
+        lv_obj_align(ui.lbl_w_day[i], LV_ALIGN_TOP_MID, 0, 10);
 
         ui.ic_w_day[i] = ui_theme_create_icon(col, &ic_w_sun, TH_AMBER);
-        lv_obj_align(ui.ic_w_day[i], LV_ALIGN_CENTER, 0, -6);
+        lv_obj_align(ui.ic_w_day[i], LV_ALIGN_CENTER, 0, -24);
 
         ui.lbl_w_hi[i] = lv_label_create(col);
         lv_label_set_text(ui.lbl_w_hi[i], "--");
         lv_obj_set_style_text_font(ui.lbl_w_hi[i], &pl_font_22, 0);
         lv_obj_set_style_text_color(ui.lbl_w_hi[i], TH_TEXT, 0);
-        lv_obj_align(ui.lbl_w_hi[i], LV_ALIGN_BOTTOM_MID, 0, -40);
+        lv_obj_align(ui.lbl_w_hi[i], LV_ALIGN_BOTTOM_MID, 0, -58);
 
         ui.lbl_w_lo[i] = lv_label_create(col);
         lv_label_set_text(ui.lbl_w_lo[i], "--");
         lv_obj_set_style_text_font(ui.lbl_w_lo[i], &pl_font_16, 0);
         lv_obj_set_style_text_color(ui.lbl_w_lo[i], TH_TEXT_SUB, 0);
-        lv_obj_align(ui.lbl_w_lo[i], LV_ALIGN_BOTTOM_MID, 0, -14);
+        lv_obj_align(ui.lbl_w_lo[i], LV_ALIGN_BOTTOM_MID, 0, -34);
+
+        ui.lbl_w_pop[i] = lv_label_create(col);
+        lv_label_set_text(ui.lbl_w_pop[i], "0%");
+        lv_obj_set_style_text_font(ui.lbl_w_pop[i], &pl_font_16, 0);
+        lv_obj_set_style_text_color(ui.lbl_w_pop[i], TH_CYAN, 0);
+        lv_obj_align(ui.lbl_w_pop[i], LV_ALIGN_BOTTOM_MID, 0, -10);
+    }
+
+    // widok szczegolow dnia + 24h pasek godzinowy
+    ui.w_day_box = lv_obj_create(ui.w_dlg);
+    lv_obj_set_size(ui.w_day_box, 432, 216);
+    lv_obj_set_pos(ui.w_day_box, 0, 40);
+    lv_obj_clear_flag(ui.w_day_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_opa(ui.w_day_box, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ui.w_day_box, 0, 0);
+    lv_obj_set_style_pad_all(ui.w_day_box, 0, 0);
+    lv_obj_add_flag(ui.w_day_box, LV_OBJ_FLAG_HIDDEN);
+
+    ui.w_det_card = lv_obj_create(ui.w_day_box);
+    lv_obj_set_size(ui.w_det_card, 432, 66);
+    lv_obj_set_pos(ui.w_det_card, 0, 0);
+    lv_obj_clear_flag(ui.w_det_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_all(ui.w_det_card, 0, 0);
+    lv_obj_set_style_radius(ui.w_det_card, 14, 0);
+    lv_obj_set_style_border_width(ui.w_det_card, 1, 0);
+    lv_obj_set_style_bg_color(ui.w_det_card, lv_color_hex(p->sleep_bg), 0);
+    lv_obj_set_style_border_color(ui.w_det_card, TH_BORDER_LIGHT, 0);
+
+    ui.ic_w_det = ui_theme_create_icon(ui.w_det_card, &ic_w_sun, TH_AMBER);
+    lv_obj_align(ui.ic_w_det, LV_ALIGN_TOP_LEFT, 12, 9);
+
+    ui.lbl_w_det_temp = lv_label_create(ui.w_det_card);
+    lv_label_set_text(ui.lbl_w_det_temp, "--");
+    lv_obj_set_style_text_font(ui.lbl_w_det_temp, &pl_font_22, 0);
+    lv_obj_set_style_text_color(ui.lbl_w_det_temp, TH_TEXT, 0);
+    lv_obj_align(ui.lbl_w_det_temp, LV_ALIGN_TOP_LEFT, 42, 7);
+
+    ui.lbl_w_det_sun = lv_label_create(ui.w_det_card);
+    lv_label_set_text(ui.lbl_w_det_sun, "");
+    lv_obj_set_style_text_font(ui.lbl_w_det_sun, &pl_font_16, 0);
+    lv_obj_set_style_text_color(ui.lbl_w_det_sun, TH_TEXT_SUB, 0);
+    lv_obj_align(ui.lbl_w_det_sun, LV_ALIGN_TOP_RIGHT, -12, 10);
+
+    ui.lbl_w_det_meta = lv_label_create(ui.w_det_card);
+    lv_obj_set_width(ui.lbl_w_det_meta, 408);
+    lv_label_set_long_mode(ui.lbl_w_det_meta, LV_LABEL_LONG_DOT);
+    lv_label_set_text(ui.lbl_w_det_meta, "");
+    lv_obj_set_style_text_font(ui.lbl_w_det_meta, &pl_font_16, 0);
+    lv_obj_set_style_text_color(ui.lbl_w_det_meta, TH_TEXT_SUB, 0);
+    lv_obj_align(ui.lbl_w_det_meta, LV_ALIGN_BOTTOM_LEFT, 12, -10);
+
+    ui.w_hour_row = lv_obj_create(ui.w_day_box);
+    lv_obj_set_size(ui.w_hour_row, 432, 142);
+    lv_obj_set_pos(ui.w_hour_row, 0, 74);
+    lv_obj_set_scroll_dir(ui.w_hour_row, LV_DIR_HOR);
+    lv_obj_set_scrollbar_mode(ui.w_hour_row, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_style_bg_opa(ui.w_hour_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ui.w_hour_row, 0, 0);
+    lv_obj_set_style_pad_all(ui.w_hour_row, 0, 0);
+
+    for (int h = 0; h < WEATHER_MAX_HOURS; h++) {
+        lv_obj_t *hc = lv_obj_create(ui.w_hour_row);
+        ui.w_hour_card[h] = hc;
+        lv_obj_set_size(hc, 60, 138);
+        lv_obj_set_pos(hc, h * 65, 2);
+        lv_obj_clear_flag(hc, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_pad_all(hc, 0, 0);
+        lv_obj_set_style_radius(hc, 14, 0);
+        lv_obj_set_style_border_width(hc, 1, 0);
+        lv_obj_set_style_bg_color(hc, lv_color_hex(p->sleep_bg), 0);
+        lv_obj_set_style_border_color(hc, TH_BORDER_LIGHT, 0);
+
+        ui.lbl_wh_time[h] = lv_label_create(hc);
+        lv_label_set_text(ui.lbl_wh_time[h], "00:00");
+        lv_obj_set_style_text_font(ui.lbl_wh_time[h], &pl_font_16, 0);
+        lv_obj_set_style_text_color(ui.lbl_wh_time[h], TH_TEXT_SUB, 0);
+        lv_obj_align(ui.lbl_wh_time[h], LV_ALIGN_TOP_MID, 0, 10);
+
+        ui.ic_wh[h] = ui_theme_create_icon(hc, &ic_w_sun, TH_AMBER);
+        lv_obj_align(ui.ic_wh[h], LV_ALIGN_CENTER, 0, -10);
+
+        ui.lbl_wh_temp[h] = lv_label_create(hc);
+        lv_label_set_text(ui.lbl_wh_temp[h], "--");
+        lv_obj_set_style_text_font(ui.lbl_wh_temp[h], &pl_font_22, 0);
+        lv_obj_set_style_text_color(ui.lbl_wh_temp[h], TH_TEXT, 0);
+        lv_obj_align(ui.lbl_wh_temp[h], LV_ALIGN_BOTTOM_MID, 0, -34);
+
+        ui.lbl_wh_pop[h] = lv_label_create(hc);
+        lv_label_set_text(ui.lbl_wh_pop[h], "0%");
+        lv_obj_set_style_text_font(ui.lbl_wh_pop[h], &pl_font_16, 0);
+        lv_obj_set_style_text_color(ui.lbl_wh_pop[h], TH_CYAN, 0);
+        lv_obj_align(ui.lbl_wh_pop[h], LV_ALIGN_BOTTOM_MID, 0, -10);
     }
 }
 
@@ -710,6 +1002,11 @@ void ui_overlays_apply_theme(const ui_palette_t *p)
         lv_obj_set_style_border_color(ui.btn_w_close, lv_color_hex(p->border_light), 0);
     }
     if (ui.lbl_w_close) lv_obj_set_style_text_color(ui.lbl_w_close, c_text, 0);
+    if (ui.btn_w_back) {
+        lv_obj_set_style_bg_color(ui.btn_w_back, c_sleep, 0);
+        lv_obj_set_style_border_color(ui.btn_w_back, lv_color_hex(p->border_light), 0);
+    }
+    if (ui.lbl_w_back) lv_obj_set_style_text_color(ui.lbl_w_back, c_text, 0);
     ui_refresh_weather_forecast();
 
     ui_refresh_theme_preview();

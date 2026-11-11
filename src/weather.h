@@ -6,18 +6,38 @@
 #include <stdint.h>
 #include "esp_err.h"
 
-#define WEATHER_MAX_DAYS 7
+#define WEATHER_MAX_DAYS  7
+#define WEATHER_MAX_HOURS 24
+
+typedef struct {
+    int8_t temp_c;
+    uint8_t wmo_code;
+    uint8_t pop_pct;
+} weather_hour_t;
 
 typedef struct {
     uint8_t wmo_code;
     int16_t t_max;
     int16_t t_min;
-    uint8_t wday; // 0=Nd, 1=Pon, 2=Wt, 3=Sr, 4=Czw, 5=Pt, 6=Sob
+    uint8_t wday;       // 0=Nd, 1=Pon, 2=Wt, 3=Sr, 4=Czw, 5=Pt, 6=Sob
+    uint8_t pop_max;    // szansa opadu 0..100
+    uint16_t rain_mm10; // opad mm * 10
+    uint8_t wind_max;   // max wiatr km/h
+    uint8_t sr_h;
+    uint8_t sr_m;
+    uint8_t ss_h;
+    uint8_t ss_m;
+    uint8_t hour_count;
+    weather_hour_t hours[WEATHER_MAX_HOURS];
 } weather_day_t;
 
 typedef struct {
     bool valid;
     int16_t temp_c;
+    int16_t feels_c;
+    uint8_t humidity;
+    uint16_t pressure_hpa;
+    uint8_t wind_kmh;
     uint8_t wmo_code;
     bool is_day;
     int64_t fetched_at;

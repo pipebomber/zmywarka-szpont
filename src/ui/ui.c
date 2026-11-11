@@ -14,6 +14,7 @@ ui_ctx_t ui = {
     .last_left_min = -1,
     .last_clock_key = -1,
     .last_door_closed = true,
+    .w_sel_day = -1,
     .finish_hour = -1,
     .finish_min = -1,
     .diag_rssi = -100,

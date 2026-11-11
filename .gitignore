@@ -4,5 +4,6 @@ sdkconfig.jc3248w535
 get-platformio.py
 include/secrets.h
 *.pdf
+*.exe
 __pycache__/
 *.pyc

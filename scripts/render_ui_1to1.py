@@ -401,44 +401,104 @@ def render_finish(p, icons):
 def render_weather_overlay(p, icons, city="Wrocław", days=None):
     if days is None:
         days = [
-            ("Dziś", "ic_w_rain", 4, 1),
-            ("Śr",   "ic_w_rain", 5, 1),
-            ("Czw",  "ic_w_partly_day", 8, 3),
-            ("Pt",   "ic_w_cloud", 4, 1),
-            ("Sob",  "ic_w_cloud", 5, 0),
-            ("Nd",   "ic_w_sun", 7, -1),
-            ("Pon",  "ic_w_partly_day", 8, 1),
+            ("Dziś", "ic_w_rain", 5, 1, 60),
+            ("Śr",   "ic_w_rain", 5, 1, 55),
+            ("Czw",  "ic_w_partly_day", 8, 3, 20),
+            ("Pt",   "ic_w_cloud", 4, 1, 10),
+            ("Sob",  "ic_w_cloud", 5, 0, 15),
+            ("Nd",   "ic_w_sun", 7, -1, 0),
+            ("Pon",  "ic_w_partly_day", 8, 1, 25),
         ]
     base = render_idle(p, icons, supply_txt="")
     dim = Image.new("RGBA", (480, 320), hex_rgba(p["bg"], 230))
     base.alpha_composite(dim)
 
-    # w_dlg: 456x270 @ (12, 25), inner x=24, y=37
-    draw_round_box(base, (12, 25), (456, 270), 20, fill=p["tile"], border_color=p["accent"], border_w=2)
-    draw_round_box(base, (368, 37), (88, 34), 10, fill=p["sleep_bg"], border_color=p["border_light"], border_w=1)
+    # w_dlg: 456x280 @ (12, 20), inner x=24, y=32
+    draw_round_box(base, (12, 20), (456, 280), 20, fill=p["tile"], border_color=p["accent"], border_w=2)
+    draw_round_box(base, (368, 32), (88, 34), 10, fill=p["sleep_bg"], border_color=p["border_light"], border_w=1)
 
-    for i, (dname, ic_name, hi, lo) in enumerate(days):
+    for i, (dname, ic_name, hi, lo, pop) in enumerate(days):
         cx = 24 + i * 62
-        cy = 85
+        cy = 98
         today = (i == 0)
         draw_round_box(
-            base, (cx, cy), (58, 194), 14,
+            base, (cx, cy), (58, 188), 14,
             fill=p["sel_bg"] if today else p["sleep_bg"],
             border_color=p["accent"] if today else p["border_light"],
             border_w=1,
         )
-        paste_icon(base, icons[ic_name], (cx + 29, cy + 91), weather_color(p, ic_name))
+        paste_icon(base, icons[ic_name], (cx + 29, cy + 68), weather_color(p, ic_name))
+
+    c_rain = 0x0284C7 if p["is_light"] else 0x38BDF8
+    d = ImageDraw.Draw(base)
+    draw_text_left(d, 24, 49, f"Pogoda · {city}", font(20, True), p["text"])
+    draw_text_centered(d, 412, 49, "Zamknij", font(15, True), p["text"])
+    draw_text_left(d, 24, 80, "Deszcz · Odcz. 2° · Wilg. 81% · Wiatr 10 km/h · 992 hPa", font(14, True), p["text_sub"])
+    for i, (dname, _, hi, lo, pop) in enumerate(days):
+        cx = 24 + i * 62
+        cy = 98
+        today = (i == 0)
+        draw_text_centered(d, cx + 29, cy + 18, dname, font(15, True), p["accent"] if today else p["text_sub"])
+        draw_text_centered(d, cx + 29, cy + 118, f"{hi}°", font(20, True), p["text"])
+        draw_text_centered(d, cx + 29, cy + 144, f"{lo}°", font(15, True), p["text_sub"])
+        draw_text_centered(d, cx + 29, cy + 168, f"{pop}%", font(14, True), c_rain if pop >= 20 else p["muted"])
+    return base
+
+
+def render_weather_day_overlay(p, icons, scroll_x=0):
+    base = render_idle(p, icons, supply_txt="")
+    dim = Image.new("RGBA", (480, 320), hex_rgba(p["bg"], 230))
+    base.alpha_composite(dim)
+
+    draw_round_box(base, (12, 20), (456, 280), 20, fill=p["tile"], border_color=p["accent"], border_w=2)
+    draw_round_box(base, (24, 32), (82, 34), 10, fill=p["sleep_bg"], border_color=p["border_light"], border_w=1)
+    draw_round_box(base, (368, 32), (88, 34), 10, fill=p["sleep_bg"], border_color=p["border_light"], border_w=1)
+
+    # w_det_card: 432x66 @ (24, 72)
+    draw_round_box(base, (24, 72), (432, 66), 14, fill=p["sleep_bg"], border_color=p["border_light"], border_w=1)
+    paste_icon(base, icons["ic_w_rain"], (47, 92), weather_color(p, "ic_w_rain"))
 
     d = ImageDraw.Draw(base)
-    draw_text_left(d, 24, 54, f"Pogoda · {city}", font(20, True), p["text"])
-    draw_text_centered(d, 412, 54, "Zamknij", font(15, True), p["text"])
-    for i, (dname, _, hi, lo) in enumerate(days):
-        cx = 24 + i * 62
-        cy = 85
-        today = (i == 0)
-        draw_text_centered(d, cx + 29, cy + 22, dname, font(15, True), p["accent"] if today else p["text_sub"])
-        draw_text_centered(d, cx + 29, cy + 144, f"{hi}°", font(20, True), p["text"])
-        draw_text_centered(d, cx + 29, cy + 172, f"{lo}°", font(15, True), p["text_sub"])
+    draw_text_centered(d, 65, 49, "< 7 dni", font(15, True), p["text"])
+    draw_text_left(d, 116, 49, "Dziś · Deszcz", font(20, True), p["text"])
+    draw_text_centered(d, 412, 49, "Zamknij", font(15, True), p["text"])
+    draw_text_left(d, 66, 91, "5° / 1°  (odcz. 2°)", font(19, True), p["text"])
+    draw_text_left(d, 346, 92, "07:01 - 16:09", font(14, True), p["text_sub"])
+    draw_text_left(d, 36, 120, "Opad: 60% (0.5 mm) · Wiatr: 10 km/h · 81% · 992 hPa", font(14, True), p["text_sub"])
+
+    # Horizontal scrollable strip (432x142 @ 24, 146)
+    hours = [
+        ("14:00", "ic_w_rain",         5, 45, True),
+        ("15:00", "ic_w_rain",         5, 45, False),
+        ("16:00", "ic_w_cloud",        5, 28, False),
+        ("17:00", "ic_w_partly_night", 4, 15, False),
+        ("18:00", "ic_w_moon",         4,  5, False),
+        ("19:00", "ic_w_moon",         3,  5, False),
+        ("20:00", "ic_w_partly_night", 3, 18, False),
+        ("21:00", "ic_w_rain",         4, 50, False),
+        ("22:00", "ic_w_rain",         4, 60, False),
+        ("23:00", "ic_w_moon",         3, 10, False),
+    ]
+    strip_w = len(hours) * 65
+    strip = Image.new("RGBA", (strip_w, 142), (0, 0, 0, 0))
+    c_rain = 0x0284C7 if p["is_light"] else 0x38BDF8
+    for idx, (ht, ic_name, tmp, pop, is_now) in enumerate(hours):
+        hx = idx * 65
+        draw_round_box(
+            strip, (hx, 2), (60, 138), 14,
+            fill=p["sel_bg"] if is_now else p["sleep_bg"],
+            border_color=p["accent"] if is_now else p["border_light"],
+            border_w=1,
+        )
+        paste_icon(strip, icons[ic_name], (hx + 30, 61), weather_color(p, ic_name))
+        sd = ImageDraw.Draw(strip)
+        draw_text_centered(sd, hx + 30, 20, ht, font(14, True), p["accent"] if is_now else p["text_sub"])
+        draw_text_centered(sd, hx + 30, 97, f"{tmp}°", font(20, True), p["text"])
+        draw_text_centered(sd, hx + 30, 122, f"{pop}%", font(14, True), c_rain if pop >= 20 else p["muted"])
+
+    sx = max(0, min(strip_w - 432, int(scroll_x)))
+    vis = strip.crop((sx, 0, sx + 432, 142))
+    base.alpha_composite(vis, (24, 146))
     return base
 
 
@@ -507,7 +567,7 @@ def build_showcase(palettes, icons):
         ("5. Opóźniony start (przesuń START w dół)", render_delay_overlay(p0, icons)),
         ("6. Koniec zmywania + komunikat o soli", render_finish(p0, icons)),
         ("7. Wybór motywu, jasności i Wi-Fi OTA", render_theme_overlay(p0, icons)),
-        ("8. Tryb nocny (ikona księżyca po zmroku)", render_idle(p0, icons, clock_txt="22:15", supply_txt="", weather_icon="ic_w_moon", weather_temp="-1°")),
+        ("8. Szczegóły dnia + prognoza godzinowa (klik w dzień)", render_weather_day_overlay(p0, icons)),
     ]
 
     pad_x, pad_y = 28, 24

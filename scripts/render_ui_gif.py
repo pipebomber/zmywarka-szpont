@@ -237,16 +237,32 @@ def build_gif():
         draw_touch_finger(fr, 377, fy, trail_from=(377, 94), col=p["accent"])
         add(fr, "1/7 · Przesunięcie ↕: powrót do 1 GODZINA", 85)
 
-    # 2. Tap weather next to clock -> 7-day forecast overlay
+    # 2. Tap weather next to clock -> 7-day forecast -> tap Dziś -> Day details + hourly scroll
     fr_wtap = render_idle_anim(p, icons)
     draw_touch_finger(fr_wtap, 146, 38, col=p["amber"])
     add(fr_wtap, "2/7 · Klik w pogodę: prognoza na tydzień", 220)
 
     w_screen = r1.render_weather_overlay(p, icons, city="Wrocław")
-    for _ in range(9):
+    for _ in range(7):
         add(w_screen, "2/7 · Prognoza 7-dniowa (Wrocław)", 140)
-    fr_wclose = r1.render_weather_overlay(p, icons, city="Wrocław")
-    draw_touch_finger(fr_wclose, 412, 54, col=p["accent"])
+
+    fr_dtap = r1.render_weather_overlay(p, icons, city="Wrocław")
+    draw_touch_finger(fr_dtap, 53, 190, col=p["accent"])
+    add(fr_dtap, "2/7 · Klik w dzień: szczegóły i godziny", 220)
+
+    for _ in range(5):
+        add(r1.render_weather_day_overlay(p, icons, scroll_x=0), "2/7 · Szczegóły dnia + 24h (Wrocław)", 130)
+    for k in range(6):
+        sx = int(round(205 * (k / 5.0)))
+        fr_hscroll = r1.render_weather_day_overlay(p, icons, scroll_x=sx)
+        fx = 310 - int(round(190 * (k / 5.0)))
+        draw_touch_finger(fr_hscroll, fx, 218, trail_from=(325, 218), col=p["accent"])
+        add(fr_hscroll, "2/7 · Przewijanie prognozy godzinowej", 95)
+    for _ in range(5):
+        add(r1.render_weather_day_overlay(p, icons, scroll_x=205), "2/7 · Nocne godziny (ikony księżyca)", 130)
+
+    fr_wclose = r1.render_weather_day_overlay(p, icons, scroll_x=205)
+    draw_touch_finger(fr_wclose, 412, 49, col=p["accent"])
     add(fr_wclose, "2/7 · Zamknij prognozę", 200)
 
     # 3. Hold clock -> Theme Switcher & Brightness / OTA Settings

@@ -114,6 +114,22 @@ void ui_pick_weather_icon(const ui_palette_t *p, uint8_t c, bool day,
     }
 }
 
+const char *ui_wmo_desc(uint8_t c, bool day)
+{
+    if (c >= 95) return "Burza";
+    if (c == 77 || (c >= 85 && c <= 86)) return "Śnieżyca";
+    if (c >= 71 && c <= 75) return "Śnieg";
+    if (c >= 80 && c <= 82) return "Przelotny deszcz";
+    if (c == 56 || c == 57 || c == 66 || c == 67) return "Marznący deszcz";
+    if (c >= 61 && c <= 65) return "Deszcz";
+    if (c >= 51 && c <= 55) return "Mżawka";
+    if (c == 45 || c == 48) return "Mgła";
+    if (c == 3) return "Pochmurno";
+    if (c == 2) return "Zachmurzenie";
+    if (c == 1) return "Pogodnie";
+    return day ? "Słonecznie" : "Bezchmurnie";
+}
+
 void ui_idle_refresh_weather(void)
 {
     if (!ui.icon_weather || !ui.lbl_weather) return;
